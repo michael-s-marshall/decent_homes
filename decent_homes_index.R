@@ -164,10 +164,22 @@ lsoas %>%
   filter(str_detect(LSOA21NM, gmca)) %>% 
   dhs_sf(var = dhs_ind)
 
-# distribution of index
+# distribution of index -------------------------------------------------------
+
+region <- read_csv("lsoa_to_region.csv")
+
+region <- region %>% 
+  rename(mnemonic = LSOA21CD,
+         region = RGN22NM) %>% 
+  select(mnemonic, region)
+
+index_df <- index_df %>% left_join(region, by = "mnemonic")
+
 index_df %>% 
-  ggplot(aes(x = dhs_ind)) +
-  geom_histogram(bins = 100, fill = "white", colour = "lightgrey")
+  ggplot(aes(x = dhs_ind, y = fct_reorder(region, dhs_ind))) +
+  geom_boxplot() +
+  theme_minimal() +
+  labs(x = "Non-Decent Index", y = NULL)
 
 # high DHS non-compliance local authorities -------------------------------------
 

@@ -6,11 +6,11 @@ pacman::p_load(tidyverse, haven, lme4, lmerTest, jtools, margins, ggstance)
 
 # reading data and merging -----------------------------
 
-general <- read_dta("ehs_2019_housing_data/stata/stata13/general_18plus19_eul.dta")
+general <- read_dta("general_18plus19_eul.dta")
 
-physical <- read_dta("ehs_2019_housing_data/stata/stata13/physical_18plus19_eul.dta")
+physical <- read_dta("physical_18plus19_eul.dta")
 
-interview <- read_dta("ehs_2019_housing_data/stata/stata13/interview_18plus19_eul.dta")
+interview <- read_dta("interview_18plus19_eul.dta")
 
 # merging 
 full <- interview %>% 
@@ -106,10 +106,22 @@ full$high_managerial <- as.factor(
   ifelse(full$nssech9 == 1 | full$nssecp9 == 1, "yes", "no")
 )
 
+full$pre_1919 <- as.factor(
+  ifelse(full$dwage7x == "pre 1919", "yes", "no")
+)
+
+full$nineteen_44 <- as.factor(
+  ifelse(full$dwage7x == "1919 to 1944", "yes", "no")
+)
+
+full$fortyfive_91 <- as.factor(
+  ifelse(full$dwage7x == "1945 to 1964"|full$dwage7x == "1965 to 1980"|full$dwage7x == "1981 to 1990", "yes", "no")
+)
+
 # modelling -------------------------------------------------
 
 contrasts(full$dhomesy)
-
+pr
 # test of null model
 null_lm <- glm(dhomesy ~ 1, data = full, family = "binomial")
 null_lmer <- glmer(dhomesy ~ (1|gorehs), data = full,
@@ -121,12 +133,20 @@ AIC(null_lmer) # not much evidence of multilevel model
 dhs_glm <- glm(dhomesy ~ emphrpx + hhtype6 + ndepchild +
                  hhbensx + high_managerial + bedstd +
                  ethhrp2x + sexhrp + tenure4x + hhltsick +
-                 housex + heat4x + EPC + dwage7x,
+                 housex + heat4x + EPC + pre_1919 + nineteen_44 + fortyfive_91,
                data = full, family = "binomial")
 summary(dhs_glm)
 summ(dhs_glm)
 
 full %>% 
+  mutate(
+    dwage7x = fct_collapse(
+      dwage7x,
+      "pre-1919" = "pre 1919",
+      "1919-1944" = "1919 to 1944",
+      "1945-1990" = c("1945 to 1964","1965 to 1980","1981 to 1990"),
+      "post-1990" = c("1991 to 2002","post 2002"))
+    ) %>% 
   group_by(tenure4x, dwage7x) %>%
   summarise(n = n(), .groups = "drop_last") %>% 
   mutate(prop = n/sum(n)) %>% 
@@ -185,9 +205,9 @@ full$epc_fg <- as.factor(
   ifelse(full$EPC == "F/G", "yes", "no")
 )
 
-dhs_pars <- glm(dhomesy ~ high_managerial + retired + 
-                  bedstd + ha + la + heat4x + 
-                  epc_e + epc_fg + dwage7x,
+dhs_pars <- glm(dhomesy ~ high_managerial + retired +
+                  bedstd + ha + la + heat4x +  epc_e + epc_fg + 
+                  pre_1919 + nineteen_44 + fortyfive_91,
                 data = full, family = "binomial")
 
 summary(dhs_pars)
@@ -201,19 +221,16 @@ plot_vars <- tibble(
   factor = as_tibble(summary(ames))$factor,
   var_name = c("Bed Standard: At standard",
                "Bed Standard: Below",
-               "Dwelling age: 1919-1944",
-               "Dwelling age: 1945-1964",
-               "Dwelling age: 1965-1980",
-               "Dwelling age: 1981-1990",
-               "Dwelling age: 1991-2002",
-               "Dwelling age: pre-1919",
                "EPC: E",
                "EPC: F/G",
+               "Dwelling age: 1945-1990",
                "Tenure: HA",
                "Heating: Fixed room",
                "Heating: Storage",
                "SEC: Higher-managerial",
                "Tenure: LA",
+               "Dwelling age: 1919-1944",
+               "Dwelling age: pre-1919",
                "Work: Retired")
 )
 
@@ -224,10 +241,7 @@ plot_vars <- plot_vars %>%
     "Bed Standard: Below",
     "Dwelling age: pre-1919",
     "Dwelling age: 1919-1944",
-    "Dwelling age: 1945-1964",
-    "Dwelling age: 1965-1980",
-    "Dwelling age: 1981-1990",
-    "Dwelling age: 1991-2002",
+    "Dwelling age: 1945-1990",
     "EPC: E",
     "EPC: F/G",
     "Heating: Fixed room",
@@ -255,6 +269,14 @@ summary(ames) %>%
 
 save(dhs_pars, file = "dhs_logit_model.RData")
 
+# saving table -------------------------------------------------
+
+summary(ames) %>% 
+  as_tibble() %>% 
+  left_join(plot_vars, by = "factor") %>% 
+  arrange(var_name) %>% 
+  write.csv("ames.csv")
+
 # extracting AME probs ------------------------------------------
 
 ames_summ <- summary(ames) %>% 
@@ -264,13 +286,11 @@ ames_summ <- tibble(
   ame = ames_summ$AME,
   var_name = ames_summ$factor,
   var = c("prob_at_beds", "prob_beds_below",
-          "prob_1919_1944", "prob_1945_1964",
-          "prob_1965_1980", "prob_1981_1990",
-          "prob_1991_2002", "prob_pre_1919",
-          "prob_e","prob_fg", 
+          "prob_e","prob_fg","prob_1945_1991", 
           "prob_ha", "prob_fixed_room",
           "prob_electric", "prob_higher_managerial",
-          "prob_la", "prob_retired")
+          "prob_la","prob_1919_1944", 
+          "prob_pre_1919","prob_retired")
   )
 
 save(ames_summ, file = "AMEs.RData")

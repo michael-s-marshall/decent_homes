@@ -31,10 +31,7 @@ age <- age %>%
   mutate(
     percent_pre_1919 = (BP_PRE_1900 + BP_1900_1918) / ALL_PROPERTIES,
     percent_1919_1944 = (BP_1919_1929 + BP_1930_1939) / ALL_PROPERTIES,
-    percent_1945_1964 = (BP_1945_1954 + BP_1955_1964) / ALL_PROPERTIES,
-    percent_1965_1980 = (BP_1965_1972 + BP_1973_1982) / ALL_PROPERTIES,
-    percent_1981_1990 = BP_1983_1992 / ALL_PROPERTIES,
-    percent_1991_2002 = BP_1993_1999 / ALL_PROPERTIES 
+    percent_1945_1991 = (BP_1945_1954 + BP_1955_1964 + BP_1965_1972 + BP_1973_1982 + BP_1983_1992) / ALL_PROPERTIES
   ) %>% 
   select(mnemonic, starts_with("percent"))
 
@@ -58,7 +55,24 @@ full <-  full %>%
     percent_fixed_room = percent_no_central_heating + percent_wood + percent_solid_fuel,
   ) 
 
-full_short <- full %>% na.omit()
+# imputation ----------------------------------------------------------------
+
+load("rf_p19.RData")
+load("rf_1944.RData")
+load("rf_1991.RData")
+
+full$rf_p19_preds <- predict(rf_p19, newdata = full)
+full$rf_1944_preds <- predict(rf_1944, newdata = full)
+full$rf_1991_preds <- predict(rf_1991, newdata = full)
+
+full <- full %>% 
+  mutate(
+    percent_pre_1919.b = ifelse(is.na(percent_pre_1919), rf_p19_preds, percent_pre_1919),
+    percent_1919_1944.b = ifelse(is.na(percent_1919_1944), rf_1944_preds, percent_1919_1944),
+    percent_1945_1991.b = ifelse(is.na(percent_1945_1991), rf_1991_preds, percent_1945_1991)
+  )
+
+full %>% map_int(~sum(is.na(.)))
 
 # scaling function-----------------------------------------------------------
 
@@ -69,13 +83,12 @@ rescale01 <- function(x){
 
 # index ---------------------------------------------------------------------------
 
-index_df <- full_short %>% 
+index_df <- full %>% 
   select(lsoa, mnemonic, percent_retired, 
          percent_higher_managerial, percent_beds_below, 
          percent_at_beds, percent_la, percent_ha, percent_electric, 
          percent_fixed_room, percent_e, percent_fg,
-         percent_pre_1919, percent_1919_1944, percent_1945_1964,
-         percent_1965_1980, percent_1981_1990, percent_1991_2002)
+         percent_pre_1919.b, percent_1919_1944.b, percent_1945_1991.b)
 
 # AMEs
 load("AMEs.RData")
@@ -99,12 +112,9 @@ index_df <- index_df %>%
     ind_e = percent_e * ames$prob_e,
     ind_fg = percent_fg * ames$prob_fg,
     ind_retired = percent_retired * ames$prob_retired,
-    ind_pre_1919 = percent_pre_1919 * ames$prob_pre_1919,
-    ind_1919_1944 = percent_1919_1944 * ames$prob_1919_1944,
-    ind_1945_1964 = percent_1945_1964 * ames$prob_1945_1964,
-    ind_1965_1980 = percent_1965_1980 * ames$prob_1965_1980,
-    ind_1981_1990 = percent_1981_1990 * ames$prob_1981_1990,
-    ind_1991_2002 = percent_1991_2002 * ames$prob_1991_2002
+    ind_pre_1919 = percent_pre_1919.b * ames$prob_pre_1919,
+    ind_1919_1944 = percent_1919_1944.b * ames$prob_1919_1944,
+    ind_1945_1991 = percent_1945_1991.b * ames$prob_1945_1991
   )
 
 ind_vars <- index_df %>% select(contains("ind")) %>% names()
@@ -114,7 +124,7 @@ index_df <- index_df %>%
 # mapping -----------------------------------------------------------------------
 
 # lsoa shapefile
-lsoas <- read_sf("shapefiles/LSOA_2021_EW_BSC_V4.shp")
+lsoas <- read_sf("LSOA_2021_EW_BSC_V4.shp")
 
 lsoas <- lsoas %>% 
   filter(LSOA21CD %in% full$mnemonic)
@@ -278,16 +288,14 @@ index_df %>%
               percent_retired + percent_higher_managerial +
               percent_beds_below + percent_at_beds + percent_la +
               percent_ha + percent_electric + percent_fixed_room +
-              percent_pre_1919 + percent_1919_1944 +
-              percent_1945_1964 + percent_1965_1980 + percent_1981_1990 +
-              percent_1991_2002,
+              percent_pre_1919.b + percent_1919_1944.b +
+              percent_1945_1991.b,
             data = index_df)))
 
 (plot_coefs(lm(dhs_ind ~ percent_fg + percent_e +
-              percent_retired + percent_higher_managerial +
-              percent_beds_below + percent_at_beds + percent_la +
-              percent_ha + percent_electric + percent_fixed_room +
-              percent_pre_1919 + percent_1919_1944 +
-              percent_1945_1964 + percent_1965_1980 + percent_1981_1990 +
-              percent_1991_2002,
+                 percent_retired + percent_higher_managerial +
+                 percent_beds_below + percent_at_beds + percent_la +
+                 percent_ha + percent_electric + percent_fixed_room +
+                 percent_pre_1919.b + percent_1919_1944.b +
+                 percent_1945_1991.b,
             data = index_df)))

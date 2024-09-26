@@ -57,6 +57,12 @@ full <-  full %>%
 
 # imputation ----------------------------------------------------------------
 
+la_lookup <- read_csv("lsoa_to_la_lookup.csv")
+
+full <- full %>% 
+  left_join(la_lookup %>% select(LSOA21CD, LAD23CD, LAD23NM),
+            by = c("mnemonic" = "LSOA21CD"))
+
 load("rf_p19.RData")
 load("rf_1944.RData")
 load("rf_1991.RData")
@@ -84,9 +90,9 @@ rescale01 <- function(x){
 # index ---------------------------------------------------------------------------
 
 index_df <- full %>% 
-  select(lsoa, mnemonic, percent_retired, 
+  select(lsoa, LAD23CD, LAD23NM, mnemonic, percent_retired, 
          percent_higher_managerial, percent_beds_below, 
-         percent_at_beds, percent_la, percent_ha, percent_electric, 
+         percent_owned, percent_prs, percent_electric, 
          percent_fixed_room, percent_e, percent_fg,
          percent_pre_1919.b, percent_1919_1944.b, percent_1945_1991.b)
 
@@ -104,9 +110,8 @@ index_df <- index_df %>%
   mutate(
     ind_higher_managerial = percent_higher_managerial * ames$prob_higher_managerial,
     ind_beds_below = percent_beds_below * ames$prob_beds_below,
-    ind_at_beds = percent_at_beds * ames$prob_at_beds,
-    ind_la = percent_la * ames$prob_la,
-    ind_ha = percent_ha * ames$prob_ha,
+    ind_prs = percent_prs * ames$prob_prs,
+    ind_owned = percent_owned * ames$prob_owner_occ,
     ind_electric = percent_electric * ames$prob_electric,
     ind_fixed_room = percent_fixed_room * ames$prob_fixed_room,
     ind_e = percent_e * ames$prob_e,
@@ -164,6 +169,11 @@ lsoas %>%
   filter(str_detect(LSOA21NM, gmca)) %>% 
   dhs_sf(var = dhs_ind)
 
+lsoas %>% 
+  left_join(index_df, by = c("LSOA21CD" = "mnemonic")) %>% 
+  filter(str_detect(LSOA21NM, "Somerset West and Taunton")) %>% 
+  dhs_sf(var = dhs_ind)
+
 # distribution of index -------------------------------------------------------
 
 region <- read_csv("lsoa_to_region.csv")
@@ -217,12 +227,7 @@ p6 + p7 + p8 + p9 + p10 + plot_layout(ncol = 5,
 
 # comparing to ONS LA estimates --------------------------------------------------------
 
-la_lookup <- read_csv("lsoa_to_la_lookup.csv")
 la_decency <- read_csv("non_decent_las.csv")
-
-index_df <- index_df %>% 
-  left_join(la_lookup %>% select(LSOA21CD, LAD23CD, LAD23NM),
-            by = c("mnemonic" = "LSOA21CD"))
 
 index_la <- index_df %>% 
   group_by(LAD23CD, LAD23NM) %>% 
@@ -267,6 +272,11 @@ p12 <- la_map_sf %>%
 
 p11 + p12
 
+# VPC by LA --------------------------------------------------------------
+
+la_lmer <- lmer(dhs_ind ~ (1|LAD23CD:region) + (1|region), data = index_df)
+summ(la_lmer)
+
 # Northumberland --------------------------------------------------------------
 
 map_las("Northumberland")
@@ -298,16 +308,16 @@ index_df %>%
 
 (summary(lm(dhs_ind ~ percent_fg + percent_e +
               percent_retired + percent_higher_managerial +
-              percent_beds_below + percent_at_beds + percent_la +
-              percent_ha + percent_electric + percent_fixed_room +
+              percent_beds_below + percent_owned +
+              percent_prs + percent_electric + percent_fixed_room +
               percent_pre_1919.b + percent_1919_1944.b +
               percent_1945_1991.b,
             data = index_df)))
 
 (plot_coefs(lm(dhs_ind ~ percent_fg + percent_e +
                  percent_retired + percent_higher_managerial +
-                 percent_beds_below + percent_at_beds + percent_la +
-                 percent_ha + percent_electric + percent_fixed_room +
+                 percent_beds_below + percent_owned +
+                 percent_prs + percent_electric + percent_fixed_room +
                  percent_pre_1919.b + percent_1919_1944.b +
                  percent_1945_1991.b,
             data = index_df)))

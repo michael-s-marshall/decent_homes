@@ -121,7 +121,7 @@ full$fortyfive_91 <- as.factor(
 # modelling -------------------------------------------------
 
 contrasts(full$dhomesy)
-pr
+
 # test of null model
 null_lm <- glm(dhomesy ~ 1, data = full, family = "binomial")
 null_lmer <- glmer(dhomesy ~ (1|gorehs), data = full,
@@ -189,13 +189,14 @@ full$prs <- as.factor(
   ifelse(full$tenure4x == "private rented", "yes", "no")
 )
 
-full$sr <- as.factor(
-  ifelse(full$tenure4x == "housing association"|full$tenure4x == "local authority", "yes", "no")
+full$owner_occ <- as.factor(
+  ifelse(full$tenure4x == "owner occupied", "yes", "no")
 )
 
 full$sr <- as.factor(
   ifelse(full$tenure4x == "housing association"|full$tenure4x == "local authority", "yes", "no")
 )
+
 
 full$epc_e <- as.factor(
   ifelse(full$EPC == "E", "yes", "no")
@@ -205,8 +206,12 @@ full$epc_fg <- as.factor(
   ifelse(full$EPC == "F/G", "yes", "no")
 )
 
+full$bedstd_below <- as.factor(
+  ifelse(full$bedstd == "below", "yes", "no")
+)
+
 dhs_pars <- glm(dhomesy ~ high_managerial + retired +
-                  bedstd + ha + la + heat4x +  epc_e + epc_fg + 
+                  bedstd_below + owner_occ + prs + heat4x +  epc_e + epc_fg + 
                   pre_1919 + nineteen_44 + fortyfive_91,
                 data = full, family = "binomial")
 
@@ -217,28 +222,28 @@ summ(dhs_pars)
 
 ames <- margins(dhs_pars, type = "response")
 
+summary(ames)
+
 plot_vars <- tibble(
   factor = as_tibble(summary(ames))$factor,
-  var_name = c("Bed Standard: At standard",
-               "Bed Standard: Below",
+  var_name = c("Bed Standard: Below",
                "EPC: E",
                "EPC: F/G",
                "Dwelling age: 1945-1990",
-               "Tenure: HA",
                "Heating: Fixed room",
                "Heating: Storage",
                "SEC: Higher-managerial",
-               "Tenure: LA",
                "Dwelling age: 1919-1944",
+               "Tenure: Owner-occupier",
                "Dwelling age: pre-1919",
+               "Tenure: PRS",
                "Work: Retired")
 )
 
 plot_vars <- plot_vars %>% 
   mutate(var_name = fct_relevel(
     as.factor(var_name),
-    c("Bed Standard: At standard",
-    "Bed Standard: Below",
+    c("Bed Standard: Below",
     "Dwelling age: pre-1919",
     "Dwelling age: 1919-1944",
     "Dwelling age: 1945-1990",
@@ -247,8 +252,8 @@ plot_vars <- plot_vars %>%
     "Heating: Fixed room",
     "Heating: Storage",
     "SEC: Higher-managerial",
-    "Tenure: HA",
-    "Tenure: LA",
+    "Tenure: Owner-occupier",
+    "Tenure: PRS",
     "Work: Retired"))
   )
 
@@ -285,12 +290,12 @@ ames_summ <- summary(ames) %>%
 ames_summ <- tibble(
   ame = ames_summ$AME,
   var_name = ames_summ$factor,
-  var = c("prob_at_beds", "prob_beds_below",
+  var = c("prob_beds_below",
           "prob_e","prob_fg","prob_1945_1991", 
-          "prob_ha", "prob_fixed_room",
-          "prob_electric", "prob_higher_managerial",
-          "prob_la","prob_1919_1944", 
-          "prob_pre_1919","prob_retired")
+          "prob_fixed_room", "prob_electric", 
+          "prob_higher_managerial",
+          "prob_1919_1944","prob_owner_occ", 
+          "prob_pre_1919","prob_prs","prob_retired")
   )
 
 save(ames_summ, file = "AMEs.RData")

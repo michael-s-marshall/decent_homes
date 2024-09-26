@@ -46,7 +46,10 @@ full <- retired %>%
   filter(!str_detect(mnemonic,"W")) %>% 
   filter(!str_detect(lsoa,"Scilly"))
 
-full %>% map_int(~sum(is.na(.)))
+la_lookup <- read_csv("lsoa_to_la_lookup.csv")
+full <- full %>% 
+  left_join(la_lookup %>% select(LSOA21CD, LAD23CD, LAD23NM),
+            by = c("mnemonic" = "LSOA21CD"))
 
 full <-  full %>% 
   mutate(
@@ -54,6 +57,8 @@ full <-  full %>%
     percent_fg = percent_f + percent_g,
     percent_fixed_room = percent_no_central_heating + percent_wood + percent_solid_fuel,
   ) 
+
+full %>% map_int(~sum(is.na(.)))
 
 full_short <- full %>% na.omit()
 
@@ -66,7 +71,8 @@ pacman::p_load(randomForest)
 lm_p19 <- lm(percent_pre_1919 ~ percent_retired +
                percent_higher_managerial + percent_beds_below + percent_at_beds +
                percent_la + percent_ha + percent_electric + percent_fixed_room +
-               percent_e + percent_fg + percent_d + percent_c + percent_b + percent_prs,
+               percent_e + percent_fg + percent_d + percent_c + percent_b + percent_prs +
+               LAD23CD,
              data = full_short)
 summary(lm_p19)
 preds_lm_p19 <- predict(lm_p19)
@@ -77,7 +83,8 @@ lm_p19_mse <- mean((preds_lm_p19 - full_short$percent_pre_1919)^2)
 lm_1944 <- lm(percent_1919_1944 ~ percent_retired +
                 percent_higher_managerial + percent_beds_below + percent_at_beds +
                 percent_la + percent_ha + percent_electric + percent_fixed_room +
-                percent_e + percent_fg + percent_d + percent_c + percent_b + percent_prs,
+                percent_e + percent_fg + percent_d + percent_c + percent_b + percent_prs +
+                LAD23CD,
               data = full_short)
 summary(lm_1944)
 preds_lm_1944 <- predict(lm_1944)
@@ -88,7 +95,8 @@ lm_1944_mse <- mean((preds_lm_1944 - full_short$percent_1919_1944)^2)
 lm_1991 <- lm(percent_1945_1991 ~ percent_retired +
                 percent_higher_managerial + percent_beds_below + percent_at_beds +
                 percent_la + percent_ha + percent_electric + percent_fixed_room +
-                percent_e + percent_fg + percent_d + percent_c + percent_b + percent_prs,
+                percent_e + percent_fg + percent_d + percent_c + percent_b + percent_prs +
+                LAD23CD,
               data = full_short)
 summary(lm_1991)
 preds_lm_1991 <- predict(lm_1991)
@@ -100,7 +108,8 @@ set.seed(123)
 rf_p19 <- randomForest(percent_pre_1919 ~ percent_retired +
                          percent_higher_managerial + percent_beds_below + percent_at_beds +
                          percent_la + percent_ha + percent_electric + percent_fixed_room +
-                         percent_e + percent_fg + percent_d + percent_c + percent_b + percent_prs,
+                         percent_e + percent_fg + percent_d + percent_c + percent_b + percent_prs +
+                         LAD23CD,
                        data = full_short, mtry = 5, ntree = 250)
 preds_rf_p19 <- predict(rf_p19)
 rf_p19_mse <- mean((preds_rf_p19 - full_short$percent_pre_1919)^2)
@@ -113,14 +122,13 @@ set.seed(123)
 rf_1944 <- randomForest(percent_1919_1944 ~ percent_retired +
                          percent_higher_managerial + percent_beds_below + percent_at_beds +
                          percent_la + percent_ha + percent_electric + percent_fixed_room +
-                         percent_e + percent_fg + percent_d + percent_c + percent_b + percent_prs,
+                         percent_e + percent_fg + percent_d + percent_c + percent_b + percent_prs +
+                         LAD23CD,
                        data = full_short, mtry = 5, ntree = 250)
 preds_rf_1944 <- predict(rf_1944)
 rf_1944_mse <- mean((preds_rf_1944 - full_short$percent_1919_1944)^2)
 lm_1944_mse
 rf_1944_mse
-
-save
 
 # random forest 1945-1991 --------------------------------------------------------------
 
@@ -128,7 +136,8 @@ set.seed(123)
 rf_1991 <- randomForest(percent_1945_1991 ~ percent_retired +
                           percent_higher_managerial + percent_beds_below + percent_at_beds +
                           percent_la + percent_ha + percent_electric + percent_fixed_room +
-                          percent_e + percent_fg + percent_d + percent_c + percent_b + percent_prs,
+                          percent_e + percent_fg + percent_d + percent_c + percent_b + percent_prs +
+                          LAD23CD,
                         data = full_short, mtry = 5, ntree = 250)
 preds_rf_1991 <- predict(rf_1991)
 rf_1991_mse <- mean((preds_rf_1991 - full_short$percent_1945_1991)^2)

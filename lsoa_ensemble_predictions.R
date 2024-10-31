@@ -18,6 +18,10 @@ occ_la <- read_csv("occupancy_la.csv")
 
 heat_la <- read_csv("central_heating_la.csv")
 
+type_la <- read_csv("housing_type_la.csv")
+
+birth_country_la <- read_csv("birth_country_la.csv")
+
 age_lsoa <- read_csv("voapropertyage.csv")
 
 lsoa_lookup <- read_csv("lsoa_to_lad_lookup.csv")
@@ -28,7 +32,9 @@ full <- la_decency |>
   left_join(epc_la[,-1], by = c("ons_code" = "la_code")) |> 
   left_join(tenure_la[,-1], by = c("ons_code" = "la_code")) |> 
   left_join(occ_la[,-1], by = c("ons_code" = "la_code")) |> 
-  left_join(heat_la[,-1], by = c("ons_code" = "la_code"))
+  left_join(heat_la[,-1], by = c("ons_code" = "la_code")) |> 
+  left_join(type_la[,-1], by = c("ons_code" = "la_code")) |> 
+  left_join(birth_country_la[,-1], by = c("ons_code" = "la_code"))
 
 # calculating age for LAs from lsoa data ------------------------------------------------
 
@@ -60,17 +66,22 @@ full <- full |>
   mutate(
     percent_beds_below = percent_one_below + percent_two_below,
     percent_fg = percent_f + percent_g,
-    percent_fixed_room = percent_no_heating + percent_wood + percent_solid
+    percent_fixed_room = percent_no_heating + percent_wood + percent_solid,
+    percent_ab = percent_a + percent_b
   ) |> 
-  select(ons_code:percent_e, percent_owned, percent_prs,
-         percent_electric, percent_pre_1919:percent_fixed_room) |> 
+  select(ons_code:percent_students, 
+         percent_e, percent_owned, percent_prs, percent_electric, 
+         percent_detached:percent_asia, 
+         percent_pre_1919:percent_ab) |> 
   filter(local_authority != "Isles of Scilly") |> 
   na.omit()
 
 # check of linear fit ---------------------------------------------------
 
-(summary(lm(percent_non_decent ~ ., data = full |> select(-ons_code, -local_authority,
-                                                          -number_dwellings, -number_non_decent))))
+test_mod <- lm(percent_non_decent ~ ., data = full |> select(-ons_code, -local_authority,
+                                                             -number_dwellings, -number_non_decent))
+
+summary(test_mod)
 
 # split into test train --------------------------------------------------
 
@@ -86,10 +97,7 @@ fitControl <- trainControl(
   savePredictions = 'final'
 )
 
-predictors <- c("percent_retired","percent_higher_managerial","percent_e",
-                "percent_owned","percent_prs","percent_electric","percent_pre_1919",
-                "percent_1919_1944","percent_1945_1991","percent_beds_below",
-                "percent_fg","percent_fixed_room")
+predictors <- colnames(model.matrix(test_mod))[-1]
 
 outcome_name <- "percent_non_decent"
 
@@ -197,7 +205,8 @@ rmse_vec
 plot(rmse_vec, type = "o")
 min(rmse_vec)
 
-# best predictor is ensemble model with lm as stacked layer 
+# best predictor is ensemble model with gm as stacked layer
+# but to avoid overfitting, going to use lm as stacked layer
 
 # Predicting outcome for the whole dataset using best model ---------------------------
 
@@ -206,12 +215,20 @@ full$OOF_pred_lm <- predict(model_lm, full[predictors])
 full$OOF_pred_nn <- predict(model_nn, full[predictors])
 full$OOF_pred_gm <- predict(model_gm, full[predictors])
 full$pred_elm <- predict(model_elm, full[,predictors_top])
+full$pred_egm <- predict(model_egm, full[,predictors_top])
 
 # distribution of predictions and real values ---------------------------------
 
 full %>% 
   ggplot() +
   geom_density(aes(x = pred_elm), fill = "lightgrey", alpha = 0.5) +
+  geom_density(aes(x = percent_non_decent), fill = "lightblue", alpha = 0.5) +
+  theme_bw()
+
+# virtually identical
+full %>% 
+  ggplot() +
+  geom_density(aes(x = pred_egm), fill = "pink", alpha = 0.5) +
   geom_density(aes(x = percent_non_decent), fill = "lightblue", alpha = 0.5) +
   theme_bw()
 

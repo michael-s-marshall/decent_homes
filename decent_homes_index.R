@@ -2,7 +2,7 @@ rm(list = ls())
 
 # loading packages -----------------------------------------------------------
 
-pacman::p_load(tidyverse, sf, ggrepel, leaflet, mapview)
+pacman::p_load(tidyverse, sf, ggrepel, leaflet, mapview, jtools, lme4)
 
 # loading datasets ----------------------------------------------------------
 
@@ -27,6 +27,12 @@ heat <- read_csv("central_heating.csv") %>%
 age <- read_csv("voapropertyage.csv") %>% 
   rename(mnemonic = 1)
 
+type <- read_csv("housing_type.csv") |> 
+  rename(lsoa = 1)
+
+birth_country <- read_csv("birth_country.csv") |> 
+  rename(lsoa = 1)
+
 age <- age %>% 
   mutate(
     percent_pre_1919 = (BP_PRE_1900 + BP_1900_1918) / ALL_PROPERTIES,
@@ -36,23 +42,26 @@ age <- age %>%
   select(mnemonic, starts_with("percent"))
 
 # merging
-full <- retired %>% 
-  left_join(hm, by = c("lsoa","mnemonic")) %>% 
-  left_join(epc, by = c("lsoa","mnemonic")) %>% 
-  left_join(tenure, by = c("lsoa","mnemonic")) %>% 
-  left_join(occ, by = c("lsoa","mnemonic")) %>% 
-  left_join(heat, by = c("lsoa","mnemonic")) %>% 
-  left_join(age, by = "mnemonic") %>% 
-  filter(!str_detect(mnemonic,"W")) %>% 
+full <- retired  |>  
+  left_join(hm, by = c("lsoa","mnemonic")) |>  
+  left_join(epc, by = c("lsoa","mnemonic")) |>  
+  left_join(tenure, by = c("lsoa","mnemonic"))  |>  
+  left_join(occ, by = c("lsoa","mnemonic")) |>  
+  left_join(heat, by = c("lsoa","mnemonic"))  |>  
+  left_join(age, by = "mnemonic") |>  
+  left_join(type, by = c("lsoa","mnemonic")) |> 
+  left_join(birth_country, by = c("lsoa","mnemonic")) |> 
+  filter(!str_detect(mnemonic,"W")) |>  
   filter(!str_detect(lsoa,"Scilly"))
 
-full %>% map_int(~sum(is.na(.)))
+full |>  map_int(~sum(is.na(.)))
 
 full <-  full %>% 
   mutate(
     percent_beds_below = percent_one_minus_beds + percent_two_minus_beds,
     percent_fg = percent_f + percent_g,
     percent_fixed_room = percent_no_central_heating + percent_wood + percent_solid_fuel,
+    percent_ab = percent_a + percent_b
   ) 
 
 # imputation ----------------------------------------------------------------
@@ -342,12 +351,13 @@ load("rf_for_ensemble.RData")
 load("nn_for_ensemble.RData")
 load("gm_for_ensemble.RData")
 load("ensemble_model.RData")
-predictors <- c("percent_retired","percent_higher_managerial","percent_e",
-                "percent_owned","percent_prs","percent_electric","percent_pre_1919",
-                "percent_1919_1944","percent_1945_1991","percent_beds_below",
-                "percent_fg","percent_fixed_room")
+predictors <- names(model_lm$trainingData)[names(model_lm$trainingData) != ".outcome"]
 
-en_df <- index_df |> 
+en_df <- full |> 
+  select(lsoa, LAD23CD, LAD23NM, mnemonic,
+         all_of(predictors), 
+         percent_pre_1919.b, percent_1919_1944.b, percent_1945_1991.b) |> 
+  select(-percent_pre_1919, -percent_1919_1944, -percent_1945_1991) |> 
   rename(percent_pre_1919 = percent_pre_1919.b,
          percent_1919_1944 = percent_1919_1944.b,
          percent_1945_1991 = percent_1945_1991.b)
@@ -357,13 +367,6 @@ en_df$OOF_pred_lm <- predict(model_lm, newdata = en_df)
 en_df$OOF_pred_nn <- predict(model_nn, newdata = en_df)
 en_df$OOF_pred_gm <- predict(model_gm, newdata = en_df)
 en_df$non_decent_preds <- predict(model_elm, newdata = en_df)
-
-cor.test(en_df$dhs_ind, en_df$non_decent_preds)
-
-en_df |> 
-  ggplot(aes(x = dhs_ind, y = non_decent_preds)) +
-  geom_point(alpha = 0.3) +
-  geom_smooth(se = FALSE)
 
 # visual validation -----------------------------------------------------
 
@@ -511,6 +514,27 @@ full_las2 %>%
 
 cor.test(full_las2$non_decent_preds, full_las2$percent_non_decent)
 (summary(lm(percent_non_decent ~ non_decent_preds, data = full_las2)))
+
+la_map_sf2 <- lsoas %>% 
+  left_join(en_df, by = c("LSOA21CD" = "mnemonic")) %>% 
+  left_join(full_las2, by = c("LAD23CD","LAD23NM"),
+            suffix = c("_lsoa","_lad"))
+
+P11 <- la_map_sf2 %>% 
+  ggplot(aes(fill = non_decent_preds_lad)) +
+  geom_sf(colour = NA) +
+  scale_fill_viridis_c(option = "turbo") +
+  theme_void() +
+  labs(fill = "Non-Decent\nPredictions")
+
+P12 <- la_map_sf2 %>% 
+  ggplot(aes(fill = percent_non_decent)) +
+  geom_sf(colour = NA) +
+  scale_fill_viridis_c(option = "turbo") +
+  theme_void() +
+  labs(fill = "ONS\nNon-decent\n%")
+
+P11 + P12
 
 # interactive map non-decent predictions ---------------------------------------
 

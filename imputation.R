@@ -76,7 +76,7 @@ lm_p19 <- lm(percent_pre_1919 ~ percent_retired +
              data = full_short)
 summary(lm_p19)
 preds_lm_p19 <- predict(lm_p19)
-lm_p19_mse <- mean((preds_lm_p19 - full_short$percent_pre_1919)^2)
+lm_p19_rmse <- sqrt(mean((preds_lm_p19 - full_short$percent_pre_1919)^2))
 
 # lm 1919-1944 ----------------------------------------------------------------------
 
@@ -88,7 +88,7 @@ lm_1944 <- lm(percent_1919_1944 ~ percent_retired +
               data = full_short)
 summary(lm_1944)
 preds_lm_1944 <- predict(lm_1944)
-lm_1944_mse <- mean((preds_lm_1944 - full_short$percent_1919_1944)^2)
+lm_1944_rmse <- sqrt(mean((preds_lm_1944 - full_short$percent_1919_1944)^2))
 
 # lm 1945 - 1991 ----------------------------------------------------------------------
 
@@ -100,7 +100,7 @@ lm_1991 <- lm(percent_1945_1991 ~ percent_retired +
               data = full_short)
 summary(lm_1991)
 preds_lm_1991 <- predict(lm_1991)
-lm_1991_mse <- mean((preds_lm_1991 - full_short$percent_1945_1991)^2)
+lm_1991_rmse <- sqrt(mean((preds_lm_1991 - full_short$percent_1945_1991)^2))
 
 # random forest pre-1919 --------------------------------------------------------------
 
@@ -112,9 +112,9 @@ rf_p19 <- randomForest(percent_pre_1919 ~ percent_retired +
                          LAD23CD,
                        data = full_short, mtry = 5, ntree = 250)
 preds_rf_p19 <- predict(rf_p19)
-rf_p19_mse <- mean((preds_rf_p19 - full_short$percent_pre_1919)^2)
-lm_p19_mse
-rf_p19_mse
+rf_p19_rmse <- sqrt(mean((preds_rf_p19 - full_short$percent_pre_1919)^2))
+lm_p19_rmse
+rf_p19_rmse
 
 # random forest 1919-1944 --------------------------------------------------------------
 
@@ -126,9 +126,9 @@ rf_1944 <- randomForest(percent_1919_1944 ~ percent_retired +
                          LAD23CD,
                        data = full_short, mtry = 5, ntree = 250)
 preds_rf_1944 <- predict(rf_1944)
-rf_1944_mse <- mean((preds_rf_1944 - full_short$percent_1919_1944)^2)
-lm_1944_mse
-rf_1944_mse
+rf_1944_rmse <- sqrt(mean((preds_rf_1944 - full_short$percent_1919_1944)^2))
+lm_1944_rmse
+rf_1944_rmse
 
 # random forest 1945-1991 --------------------------------------------------------------
 
@@ -140,9 +140,9 @@ rf_1991 <- randomForest(percent_1945_1991 ~ percent_retired +
                           LAD23CD,
                         data = full_short, mtry = 5, ntree = 250)
 preds_rf_1991 <- predict(rf_1991)
-rf_1991_mse <- mean((preds_rf_1991 - full_short$percent_1945_1991)^2)
-lm_1991_mse
-rf_1991_mse
+rf_1991_rmse <- sqrt(mean((preds_rf_1991 - full_short$percent_1945_1991)^2))
+lm_1991_rmse
+rf_1991_rmse
 
 # saving ------------------------------------------------------------------
 

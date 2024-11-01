@@ -26,6 +26,12 @@ age_lsoa <- read_csv("voapropertyage.csv")
 
 lsoa_lookup <- read_csv("lsoa_to_lad_lookup.csv")
 
+regions <- read_csv("lsoa_to_region.csv")
+
+regions <- regions |> 
+  select(LAD22CD, RGN22CD) |> 
+  unique()
+
 full <- la_decency |> 
   left_join(retired_la[,-1], by = c("ons_code" = "la_code")) |> 
   left_join(hm_la[,-1], by = c("ons_code" = "la_code")) |> 
@@ -34,7 +40,13 @@ full <- la_decency |>
   left_join(occ_la[,-1], by = c("ons_code" = "la_code")) |> 
   left_join(heat_la[,-1], by = c("ons_code" = "la_code")) |> 
   left_join(type_la[,-1], by = c("ons_code" = "la_code")) |> 
-  left_join(birth_country_la[,-1], by = c("ons_code" = "la_code"))
+  left_join(birth_country_la[,-1], by = c("ons_code" = "la_code")) |> 
+  left_join(regions, by = c("ons_code" = "LAD22CD"))
+
+full$RGN22CD[full$local_authority == "Cumberland"] <- "E12000002"
+full$RGN22CD[full$local_authority == "North Yorkshire"] <- "E12000003"
+full$RGN22CD[full$local_authority == "Somerset"] <- "E12000009"
+full$RGN22CD[full$local_authority == "Westmorland and Furness"] <- "E12000002"
 
 # calculating age for LAs from lsoa data ------------------------------------------------
 
@@ -67,12 +79,19 @@ full <- full |>
     percent_beds_below = percent_one_below + percent_two_below,
     percent_fg = percent_f + percent_g,
     percent_fixed_room = percent_no_heating + percent_wood + percent_solid,
-    percent_ab = percent_a + percent_b
+    percent_ab = percent_a + percent_b,
+    E12000002 = ifelse(RGN22CD == "E12000002", 1, 0),
+    E12000003 = ifelse(RGN22CD == "E12000003", 1, 0),
+    E12000004 = ifelse(RGN22CD == "E12000004", 1, 0),
+    E12000005 = ifelse(RGN22CD == "E12000005", 1, 0),
+    E12000006 = ifelse(RGN22CD == "E12000006", 1, 0),
+    E12000007 = ifelse(RGN22CD == "E12000007", 1, 0),
+    E12000008 = ifelse(RGN22CD == "E12000008", 1, 0),
   ) |> 
   select(ons_code:percent_students, 
          percent_e, percent_owned, percent_prs, percent_electric, 
          percent_detached:percent_asia, 
-         percent_pre_1919:percent_ab) |> 
+         percent_pre_1919:E12000008) |> 
   filter(local_authority != "Isles of Scilly") |> 
   na.omit()
 

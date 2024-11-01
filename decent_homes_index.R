@@ -2,7 +2,7 @@ rm(list = ls())
 
 # loading packages -----------------------------------------------------------
 
-pacman::p_load(tidyverse, sf, ggrepel, leaflet, mapview, jtools, lme4)
+pacman::p_load(tidyverse, sf, ggrepel, leaflet, mapview, jtools, lme4, randomForest, caret, gam)
 
 # loading datasets ----------------------------------------------------------
 
@@ -353,9 +353,25 @@ load("gm_for_ensemble.RData")
 load("ensemble_model.RData")
 predictors <- names(model_lm$trainingData)[names(model_lm$trainingData) != ".outcome"]
 
+region <- read_csv("lsoa_to_region.csv")
+
+region <- region %>% 
+  rename(mnemonic = LSOA21CD) %>% 
+  select(mnemonic, RGN22CD)
+
 en_df <- full |> 
+  left_join(region, by = "mnemonic") |> 
+  mutate(
+    E12000002 = ifelse(RGN22CD == "E12000002", 1, 0),
+    E12000003 = ifelse(RGN22CD == "E12000003", 1, 0),
+    E12000004 = ifelse(RGN22CD == "E12000004", 1, 0),
+    E12000005 = ifelse(RGN22CD == "E12000005", 1, 0),
+    E12000006 = ifelse(RGN22CD == "E12000006", 1, 0),
+    E12000007 = ifelse(RGN22CD == "E12000007", 1, 0),
+    E12000008 = ifelse(RGN22CD == "E12000008", 1, 0)
+  ) |> 
   select(lsoa, LAD23CD, LAD23NM, mnemonic,
-         all_of(predictors), 
+         all_of(predictors), starts_with("^E12"), 
          percent_pre_1919.b, percent_1919_1944.b, percent_1945_1991.b) |> 
   select(-percent_pre_1919, -percent_1919_1944, -percent_1945_1991) |> 
   rename(percent_pre_1919 = percent_pre_1919.b,
@@ -367,6 +383,8 @@ en_df$OOF_pred_lm <- predict(model_lm, newdata = en_df)
 en_df$OOF_pred_nn <- predict(model_nn, newdata = en_df)
 en_df$OOF_pred_gm <- predict(model_gm, newdata = en_df)
 en_df$non_decent_preds <- predict(model_elm, newdata = en_df)
+range(en_df$non_decent_preds)
+en_df$non_decent_preds[en_df$non_decent_preds < 0] <- 0
 
 # visual validation -----------------------------------------------------
 
@@ -553,3 +571,10 @@ leaflet(preds) %>%
               fillColor = ~pal2(`Non-decent`),
               fillOpacity = .8) %>% 
   addLegend(pal = pal2, values = ~`Non-decent`, opacity = .8)
+
+# saving predictions --------------------------------------------------------
+
+to_save <- en_df |> 
+  select(lsoa, mnemonic, non_decent_preds)
+
+write.csv(to_save, file = "non_decent_lsoa_predictions.csv")

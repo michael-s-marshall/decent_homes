@@ -541,18 +541,34 @@ la_map_sf2 <- lsoas %>%
 P11 <- la_map_sf2 %>% 
   ggplot(aes(fill = non_decent_preds_lad)) +
   geom_sf(colour = NA) +
-  scale_fill_viridis_c(option = "turbo") +
+  scale_fill_viridis_c() +
   theme_void() +
   labs(fill = "Non-Decent\nPredictions")
 
 P12 <- la_map_sf2 %>% 
   ggplot(aes(fill = percent_non_decent)) +
   geom_sf(colour = NA) +
-  scale_fill_viridis_c(option = "turbo") +
+  scale_fill_viridis_c() +
   theme_void() +
   labs(fill = "ONS\nNon-decent\n%")
 
 P11 + P12
+
+# preds vs. index ----------------------------------------------------------
+
+comparison <- index_df |> 
+  select(mnemonic, dhs_ind) |> 
+  left_join(en_df[,c("mnemonic","non_decent_preds")],
+            by = "mnemonic")
+
+cor.test(comparison$dhs_ind, comparison$non_decent_preds)
+
+comparison |> 
+  ggplot(aes(x = dhs_ind, non_decent_preds)) +
+  geom_point(alpha = 0.1) +
+  geom_smooth(method = "lm", se = FALSE)
+
+(summary(lm(non_decent_preds ~ dhs_ind, data = comparison)))
 
 # interactive map non-decent predictions ---------------------------------------
 

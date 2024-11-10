@@ -2,7 +2,7 @@ rm(list = ls())
 
 # loading packages -----------------------------------------------------------
 
-pacman::p_load(tidyverse, sf, ggrepel, leaflet, mapview, jtools, lme4, randomForest, caret, gam)
+pacman::p_load(tidyverse, sf, ggrepel, leaflet, mapview, jtools, lme4, randomForest, caret, gam, elasticnet, ggridges, patchwork)
 
 # loading datasets ----------------------------------------------------------
 
@@ -350,6 +350,7 @@ load("lm_for_ensemble.RData")
 load("rf_for_ensemble.RData")
 load("nn_for_ensemble.RData")
 load("gm_for_ensemble.RData")
+load("ls_for_ensemble.RData")
 load("ensemble_model.RData")
 predictors <- names(model_lm$trainingData)[names(model_lm$trainingData) != ".outcome"]
 
@@ -372,19 +373,22 @@ en_df <- full |>
   ) |> 
   select(lsoa, LAD23CD, LAD23NM, mnemonic,
          all_of(predictors), starts_with("^E12"), 
-         percent_pre_1919.b, percent_1919_1944.b, percent_1945_1991.b) |> 
-  select(-percent_pre_1919, -percent_1919_1944, -percent_1945_1991) |> 
+         percent_pre_1919.b, percent_1919_1944.b) |> 
+  select(-percent_pre_1919, -percent_1919_1944) |> 
   rename(percent_pre_1919 = percent_pre_1919.b,
-         percent_1919_1944 = percent_1919_1944.b,
-         percent_1945_1991 = percent_1945_1991.b)
+         percent_1919_1944 = percent_1919_1944.b)
+
+x_trans <- preProcess(en_df[,predictors])
+en_df[,predictors] <- predict(x_trans, en_df[,predictors])
 
 en_df$OOF_pred_rf <- predict(model_rf, newdata = en_df)
 en_df$OOF_pred_lm <- predict(model_lm, newdata = en_df)
 en_df$OOF_pred_nn <- predict(model_nn, newdata = en_df)
 en_df$OOF_pred_gm <- predict(model_gm, newdata = en_df)
+en_df$OOF_pred_ls <- predict(model_ls, newdata = en_df)
 en_df$non_decent_preds <- predict(model_elm, newdata = en_df)
-range(en_df$non_decent_preds)
-en_df$non_decent_preds[en_df$non_decent_preds < 0] <- 0
+scale_range <- range(en_df$non_decent_preds)
+# en_df$non_decent_preds[en_df$non_decent_preds < 0] <- 0
 
 # visual validation -----------------------------------------------------
 
@@ -396,7 +400,7 @@ sheff2 <- lsoas |>
   ggplot(aes(fill = non_decent_preds)) +
   geom_sf() +
   scale_fill_viridis_c(option = "turbo",
-                       limits = c(0,79),
+                       limits = scale_range,
                        oob = scales::squish) +
   theme_void() +
   labs(fill = "Non-Decent\nPredictions")
@@ -411,7 +415,7 @@ london2 <- lsoas |>
   ggplot(aes(fill = non_decent_preds)) +
   geom_sf() +
   scale_fill_viridis_c(option = "turbo",
-                       limits = c(0,79),
+                       limits = scale_range,
                        oob = scales::squish) +
   theme_void() +
   labs(fill = "Non-Decent\nPredictions")
@@ -426,7 +430,7 @@ manc2 <- lsoas |>
   ggplot(aes(fill = non_decent_preds)) +
   geom_sf() +
   scale_fill_viridis_c(option = "turbo",
-                       limits = c(0,79),
+                       limits = scale_range,
                        oob = scales::squish) +
   theme_void() +
   labs(fill = "Non-Decent\nPredictions")
@@ -441,7 +445,7 @@ swt2 <- lsoas |>
   ggplot(aes(fill = non_decent_preds)) +
   geom_sf() +
   scale_fill_viridis_c(option = "turbo",
-                       limits = c(0,79),
+                       limits = scale_range,
                        oob = scales::squish) +
   theme_void() +
   labs(fill = "Non-Decent\nPredictions")
@@ -456,7 +460,7 @@ northumberland2 <- lsoas |>
   ggplot(aes(fill = non_decent_preds)) +
   geom_sf() +
   scale_fill_viridis_c(option = "turbo",
-                       limits = c(0,79),
+                       limits = scale_range,
                        oob = scales::squish) +
   theme_void() +
   labs(fill = "Non-Decent\nPredictions")
@@ -473,7 +477,7 @@ map_las2 <- function(la_string){
     ggplot(aes(fill = non_decent_preds)) +
     geom_sf() +
     scale_fill_viridis_c(option = "turbo",
-                         limits = c(0,79),
+                         limits = scale_range,
                          oob = scales::squish) +
     theme_void() +
     labs(title = la_string, fill = "ONS\nNon-decent\n%") +
@@ -503,9 +507,7 @@ P6 + P7 + P8 + P9 + P10 + plot_layout(ncol = 5,
 
 # comparing with LA estimates ---------------------------------------------
 
-dwellings_n <- read_csv("RM204-Number-Of-Dwellings-2021-lsoa-ONS.csv")
-
-names(dwellings_n) <- c("mnemonic","lsoa_name","all_dwellings")
+dwellings_n <- read_csv("all_households.csv")
 
 dwellings_n <- dwellings_n |> select(-lsoa_name)
 
@@ -513,12 +515,12 @@ en_df <- en_df |>
   left_join(dwellings_n, by = "mnemonic")
 
 en_la <- en_df %>% 
-  mutate(non_decent_preds_total = (non_decent_preds/100) * all_dwellings) |> 
+  mutate(non_decent_preds_total = (non_decent_preds/100) * total_households) |> 
   group_by(LAD23CD, LAD23NM) |>  
   summarise(non_decent_preds_total = sum(non_decent_preds_total, na.rm = T),
-            all_dwellings = sum(all_dwellings, na.rm = T),
+            all_dwellings = sum(total_households, na.rm = T),
             .groups = "drop") |> 
-  mutate(non_decent_preds = non_decent_preds_total / all_dwellings)
+  mutate(non_decent_preds = (non_decent_preds_total / all_dwellings)*100)
 
 full_las2 <- en_la %>% 
   left_join(la_decency, by = c("LAD23CD" = "ons_code"))
@@ -538,44 +540,106 @@ la_map_sf2 <- lsoas %>%
   left_join(full_las2, by = c("LAD23CD","LAD23NM"),
             suffix = c("_lsoa","_lad"))
 
+scale_range <- range(c(la_map_sf2$non_decent_preds_lad,la_map_sf2$percent_non_decent))
+
 P11 <- la_map_sf2 %>% 
   ggplot(aes(fill = non_decent_preds_lad)) +
   geom_sf(colour = NA) +
-  scale_fill_viridis_c() +
+  scale_fill_viridis_c(limits = scale_range,
+                       oob = scales::squish) +
   theme_void() +
   labs(fill = "Non-Decent\nPredictions")
 
 P12 <- la_map_sf2 %>% 
   ggplot(aes(fill = percent_non_decent)) +
   geom_sf(colour = NA) +
-  scale_fill_viridis_c() +
+  scale_fill_viridis_c(limits = scale_range,
+                       oob = scales::squish) +
   theme_void() +
-  labs(fill = "ONS\nNon-decent\n%")
+  labs(fill = "MHLCG\nNon-decent\n%")
 
 P11 + P12
+
+full_las2 |> 
+  ggplot() +
+  geom_density(aes(x = percent_non_decent), fill = "lightblue", alpha = 0.5) +
+  geom_density(aes(x = non_decent_preds), fill = "lightgrey", alpha = 0.5)
+
+region <- read_csv("lsoa_to_region.csv") |> 
+  select(LAD22CD, RGN22NM) |> 
+  unique()
+
+ridge_df <- full_las2 |> 
+  left_join(region, by = c("LAD23CD" = "LAD22CD")) |>
+  pivot_longer(c(non_decent_preds,percent_non_decent),
+               names_to = "measure",
+               values_to = "value")
+ridge_df$RGN22NM[ridge_df$LAD23NM == "Cumberland"] <- "North West"
+ridge_df$RGN22NM[ridge_df$LAD23NM == "Westmorland and Furness"] <- "North West"
+ridge_df$RGN22NM[ridge_df$LAD23NM == "North Yorkshire"] <- "Yorkshire and The Humber"
+ridge_df$RGN22NM[ridge_df$LAD23NM == "Somerset"] <- "South West"
+
+ridge_df |> 
+  ggplot(aes(x = value, y = fct_reorder(RGN22NM, value), fill = measure)) +
+  geom_density_ridges(alpha = 0.3, scale = 1) +
+  scale_fill_viridis_d() +
+  theme_minimal() +
+  labs(y = NULL)
+
+# multiplying factors ------------------------------------------
+
+full_las2 <- full_las2 |> 
+  mutate(multiplier = percent_non_decent/non_decent_preds,
+         reconcilation_pct = non_decent_preds * multiplier)
+
+full_las_mults <- full_las2 |> 
+  select(LAD23CD, multiplier)
+
+en_df <- en_df |> 
+  left_join(full_las_mults, by = "LAD23CD") |> 
+  mutate(non_decent_preds_m = non_decent_preds * multiplier)
+
+en_la2 <- en_df %>% 
+  mutate(non_decent_preds_total = (non_decent_preds_m/100) * total_households) |> 
+  group_by(LAD23CD, LAD23NM) |>  
+  summarise(non_decent_preds_total = sum(non_decent_preds_total, na.rm = T),
+            all_dwellings = sum(total_households, na.rm = T),
+            .groups = "drop") |> 
+  mutate(non_decent_preds = (non_decent_preds_total / all_dwellings) * 100)
+
+full_las2 <- en_la2 %>% 
+  left_join(la_decency[,c("ons_code","percent_non_decent")], 
+            by = c("LAD23CD" = "ons_code"))
+
+full_las2 %>% 
+  ggplot(aes(x = non_decent_preds, y = percent_non_decent)) +
+  geom_point(alpha = 0.5) +
+  geom_smooth(method = "lm") +
+  theme_minimal() +
+  labs(x = "Non-decent PRS Predictions", y = "MHCLG % PRS Non-decent")
 
 # preds vs. index ----------------------------------------------------------
 
 comparison <- index_df |> 
   select(mnemonic, dhs_ind) |> 
-  left_join(en_df[,c("mnemonic","non_decent_preds")],
+  left_join(en_df[,c("mnemonic","non_decent_preds_m")],
             by = "mnemonic")
 
-cor.test(comparison$dhs_ind, comparison$non_decent_preds)
+cor.test(comparison$dhs_ind, comparison$non_decent_preds_m)
 
 comparison |> 
-  ggplot(aes(x = dhs_ind, non_decent_preds)) +
+  ggplot(aes(x = dhs_ind, non_decent_preds_m)) +
   geom_point(alpha = 0.1) +
   geom_smooth(method = "lm", se = FALSE)
 
-(summary(lm(non_decent_preds ~ dhs_ind, data = comparison)))
+(summary(lm(non_decent_preds_m ~ dhs_ind, data = comparison)))
 
 # interactive map non-decent predictions ---------------------------------------
 
 preds <- lsoas |>  
-  left_join(en_df[,c("mnemonic","non_decent_preds")], 
+  left_join(en_df[,c("mnemonic","non_decent_preds_m")], 
             by = c("LSOA21CD" = "mnemonic")) |> 
-  rename(`Non-decent` = non_decent_preds)
+  rename(`Non-decent` = non_decent_preds_m)
 
 preds <- st_transform(preds, 4326)
 
@@ -588,9 +652,128 @@ leaflet(preds) %>%
               fillOpacity = .8) %>% 
   addLegend(pal = pal2, values = ~`Non-decent`, opacity = .8)
 
+# visual validation -----------------------------------------------------
+
+scale_range <- range(en_df$non_decent_preds_m)
+
+# mapping sheffield
+sheff3 <- lsoas |> 
+  left_join(en_df[,c("mnemonic","non_decent_preds_m")],
+            by = c("LSOA21CD" = "mnemonic")) |>  
+  filter(str_detect(LSOA21NM, "Sheffield")) |>  
+  ggplot(aes(fill = non_decent_preds_m)) +
+  geom_sf() +
+  scale_fill_viridis_c(option = "turbo",
+                       limits = scale_range,
+                       oob = scales::squish) +
+  theme_void() +
+  labs(fill = "Non-Decent\nPredictions")
+
+sheff2 + sheff3
+
+# mapping london
+london3 <- lsoas |>  
+  left_join(en_df[,c("mnemonic","non_decent_preds_m")], 
+            by = c("LSOA21CD" = "mnemonic")) |>  
+  filter(LSOA21CD %in% london$`LSOA code`) |> 
+  ggplot(aes(fill = non_decent_preds_m)) +
+  geom_sf() +
+  scale_fill_viridis_c(option = "turbo",
+                       limits = scale_range,
+                       oob = scales::squish) +
+  theme_void() +
+  labs(fill = "Non-Decent\nPredictions")
+
+london2 + london3
+
+# mapping manchester
+manc3 <- lsoas |> 
+  left_join(en_df[,c("mnemonic","non_decent_preds_m")], 
+            by = c("LSOA21CD" = "mnemonic")) |>  
+  filter(str_detect(LSOA21NM, gmca))  |> 
+  ggplot(aes(fill = non_decent_preds_m)) +
+  geom_sf() +
+  scale_fill_viridis_c(option = "turbo",
+                       limits = scale_range,
+                       oob = scales::squish) +
+  theme_void() +
+  labs(fill = "Non-Decent\nPredictions")
+
+manc2 + manc3
+
+# somerset west and taunton comparison
+swt3 <- lsoas |>  
+  left_join(en_df[,c("mnemonic","non_decent_preds_m")], 
+            by = c("LSOA21CD" = "mnemonic")) |>
+  filter(str_detect(LSOA21NM, "Somerset West and Taunton")) |> 
+  ggplot(aes(fill = non_decent_preds_m)) +
+  geom_sf() +
+  scale_fill_viridis_c(option = "turbo",
+                       limits = scale_range,
+                       oob = scales::squish) +
+  theme_void() +
+  labs(fill = "Non-Decent\nPredictions")
+
+swt2 + swt3
+
+# comparison of northumberland
+northumberland3 <- lsoas |> 
+  left_join(en_df[,c("mnemonic","non_decent_preds_m")], 
+            by = c("LSOA21CD" = "mnemonic")) |>
+  filter(str_detect(LSOA21NM, "Northumberland"))  |>  
+  ggplot(aes(fill = non_decent_preds_m)) +
+  geom_sf() +
+  scale_fill_viridis_c(option = "turbo",
+                       limits = scale_range,
+                       oob = scales::squish) +
+  theme_void() +
+  labs(fill = "Non-Decent\nPredictions")
+
+northumberland2 + northumberland3
+
+# non-decent predictions by high and low LAs ------------------------------
+
+map_las3 <- function(la_string){
+  lsoas |> 
+    left_join(en_df[,c("mnemonic","non_decent_preds_m")], 
+              by = c("LSOA21CD" = "mnemonic")) |> 
+    filter(str_detect(LSOA21NM, la_string)) |>  
+    ggplot(aes(fill = non_decent_preds_m)) +
+    geom_sf() +
+    scale_fill_viridis_c(option = "turbo",
+                         limits = scale_range,
+                         oob = scales::squish) +
+    theme_void() +
+    labs(title = la_string, fill = "ONS\nNon-decent\n%") +
+    theme(plot.title = element_text(size = 9,
+                                    hjust = 0.5))
+}
+
+P1 <- map_las3("Derbyshire Dales")
+P2 <- map_las3("West Devon")
+P3 <- map_las3("Torridge")
+P4 <- map_las3("Mid Devon")
+P5 <- map_las3("Cornwall")
+
+# low non-compliance local authorities
+
+P6 <- map_las3("Bracknell Forest")
+P7 <- map_las3("Wokingham")
+P8 <- map_las3("Milton Keynes")
+P9 <- map_las3("Surrey Heath")
+P10 <- map_las3("Eastleigh")
+
+P1 + P2 + P3 + P4 + P5 + plot_layout(ncol = 5,
+                                     guides = "collect")
+
+P6 + P7 + P8 + P9 + P10 + plot_layout(ncol = 5,
+                                      guides = "collect")
+
+
 # saving predictions --------------------------------------------------------
 
 to_save <- en_df |> 
-  select(lsoa, mnemonic, non_decent_preds)
+  select(lsoa, mnemonic, non_decent_preds_m) |> 
+  rename(non_decent_preds = non_decent_preds_m)
 
 write.csv(to_save, file = "non_decent_lsoa_predictions.csv")

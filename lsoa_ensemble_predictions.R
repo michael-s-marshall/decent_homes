@@ -1,6 +1,6 @@
 rm(list = ls())
 
-pacman::p_load(caret, tidyverse)
+pacman::p_load(caret, tidyverse,  elasticnet)
 
 # loading LA level datasets -------------------------------------------------
 
@@ -99,14 +99,29 @@ full <- full |>
 
 test_mod <- lm(percent_non_decent ~ ., data = full |> select(-ons_code, -local_authority,
                                                              -number_dwellings, -number_non_decent))
-
 summary(test_mod)
+
+predictors <- c("percent_retired","percent_higher_managerial","percent_semi_routine","percent_long_unemployed","percent_students","percent_owned","percent_prs","percent_electric","percent_asia","percent_pre_1919","percent_1919_1944","percent_fg","percent_fixed_room","E12000002","E12000003","E12000004","E12000005","E12000006","E12000007","E12000008")
+
+test_mod2 <- lm(percent_non_decent ~ ., data = full[,c(predictors,"percent_non_decent")])
+summary(test_mod2)
 
 # split into test train --------------------------------------------------
 
+outcome <- full$percent_non_decent
+full_predictors <- full[,predictors]
 set.seed(123)
-train_set <- sample_frac(full, 0.8) |> as.data.frame()
-test_set <- full |> filter(!ons_code %in% train_set$ons_code) |> as.data.frame()
+in_train <- createDataPartition(outcome, p = 0.8, list = F)
+train_predictors <- full_predictors[in_train,] |> as.data.frame()
+test_predictors <- full_predictors[-in_train,] |> as.data.frame()
+train_outcome <- outcome[in_train]
+test_outcome <- outcome[-in_train]
+
+# scaling and centering
+x_trans <- preProcess(train_predictors)
+train_predictors <- predict(x_trans, train_predictors)
+test_predictors <- predict(x_trans, test_predictors)
+full_predictors <- predict(x_trans, full_predictors)
 
 # Defining the training controls for multiple models -----------------------------
 
@@ -116,102 +131,123 @@ fitControl <- trainControl(
   savePredictions = 'final'
 )
 
-predictors <- colnames(model.matrix(test_mod))[-1]
-
-outcome_name <- "percent_non_decent"
-
 # training lower layer models -------------------------------------------------
 
 #Training the random forest model
-model_rf <- train(train_set[,predictors],
-                  train_set[,outcome_name],
+set.seed(123)
+model_rf <- train(train_predictors,
+                  train_outcome,
                   method='rf',
                   trControl=fitControl,
-                  tuneLength=3)
+                  tuneLength=5)
+
+model_rf
 
 #Training the lm model
-model_lm <- train(train_set[,predictors],
-                  train_set[,outcome_name],
+model_lm <- train(train_predictors,
+                  train_outcome,
                   method='lm',
-                  trControl=fitControl,
-                  tuneLength=3)
+                  trControl=fitControl)
 
-#Training the nn model
-model_nn <- train(train_set[,predictors],
-                  train_set[,outcome_name],
-                  method='nnet',
-                  trControl=fitControl,
-                  linout = TRUE,
-                  tuneLength=3)
+model_lm
+
+lasso_grid <- data.frame(fraction = seq(.5, 1, length = 10))
+set.seed(123)
+model_ls <- train(train_predictors,
+                  train_outcome,
+                  method='lasso',
+                  tuneGrid = lasso_grid,
+                  trControl=fitControl)
+
+model_ls
 
 #Training the gam model
-model_gm <- train(train_set[,predictors],
-                  train_set[,outcome_name],
+set.seed(123)
+model_gm <- train(train_predictors,
+                  train_outcome,
                   method='gamSpline',
                   trControl=fitControl,
                   tuneLength=3)
 
-test_set$pred_rf <- predict(object = model_rf, test_set[,predictors])
-test_set$pred_lm <- predict(object = model_lm, test_set[,predictors])
-test_set$pred_nn <- predict(object = model_nn, test_set[,predictors])
-test_set$pred_gm <- predict(object = model_gm, test_set[,predictors])
+model_gm
+
+#Training the nn model
+my_grid <- expand.grid(.decay = c(0.9, 0.5, 0.1), .size = c(5:10))
+
+model_nn <- train(train_predictors,
+                  train_outcome,
+                  method='nnet',
+                  tuneGrid = my_grid,
+                  trControl=fitControl,
+                  linout = TRUE,
+                  maxit = 1000)
+model_nn
+
+
+test_predictors$pred_rf <- predict(object = model_rf, test_predictors)
+test_predictors$pred_lm <- predict(object = model_lm, test_predictors)
+test_predictors$pred_ls <- predict(object = model_lm, test_predictors)
+test_predictors$pred_nn <- predict(object = model_nn, test_predictors)
+test_predictors$pred_gm <- predict(object = model_gm, test_predictors)
 
 #Predicting the out of fold prediction non-decent % for training data
-train_set$OOF_pred_rf <- model_rf$pred$pred[order(model_rf$pred$rowIndex)]
-train_set$OOF_pred_lm <- model_lm$pred$pred[order(model_lm$pred$rowIndex)]
-train_set$OOF_pred_nn <- model_nn$pred$pred[order(model_nn$pred$rowIndex)]
-train_set$OOF_pred_gm <- model_gm$pred$pred[order(model_gm$pred$rowIndex)]
+train_predictors$OOF_pred_rf <- model_rf$pred$pred[order(model_rf$pred$rowIndex)]
+train_predictors$OOF_pred_lm <- model_lm$pred$pred[order(model_lm$pred$rowIndex)]
+train_predictors$OOF_pred_ls <- model_ls$pred$pred[order(model_nn$pred$rowIndex)]
+train_predictors$OOF_pred_nn <- model_nn$pred$pred[order(model_nn$pred$rowIndex)]
+train_predictors$OOF_pred_gm <- model_gm$pred$pred[order(model_gm$pred$rowIndex)]
 
 #Predicting non-decent % for the test data
-test_set$OOF_pred_rf <- predict(model_rf, test_set[predictors])
-test_set$OOF_pred_lm <- predict(model_lm, test_set[predictors])
-test_set$OOF_pred_nn <- predict(model_nn, test_set[predictors])
-test_set$OOF_pred_gm <- predict(model_gm, test_set[predictors])
+test_predictors$OOF_pred_rf <- predict(model_rf, test_predictors)
+test_predictors$OOF_pred_lm <- predict(model_lm, test_predictors)
+test_predictors$OOF_pred_ls <- predict(model_ls, test_predictors)
+test_predictors$OOF_pred_nn <- predict(model_nn, test_predictors)
+test_predictors$OOF_pred_gm <- predict(model_gm, test_predictors)
 
 # ensemble model -----------------------------------------------------------
 
 #Predictors for top layer models 
-predictors_top <- c('OOF_pred_rf', 'OOF_pred_lm', 'OOF_pred_nn', 'OOF_pred_gm') 
+predictors_top <- c('OOF_pred_rf', 'OOF_pred_lm', 'OOF_pred_ls', 'OOF_pred_nn', 'OOF_pred_gm') 
 
 #lm as top layer model 
-model_elm <- train(train_set[,predictors_top],
-                   train_set[,outcome_name],
+model_elm <- train(train_predictors[,predictors_top],
+                   train_outcome,
                    method = 'lm',
-                   trControl = fitControl,
-                   tuneLength = 3)
-
-#nnet as top layer model 
-model_enn <- train(train_set[,predictors_top],
-                   train_set[,outcome_name],
-                   method = 'nnet',
-                   trControl = fitControl,
-                   linout = TRUE,
-                   tuneLength = 3)
+                   trControl = fitControl)
 
 #gam as top layer model 
-model_egm <- train(train_set[,predictors_top],
-                   train_set[,outcome_name],
+model_egm <- train(train_predictors[,predictors_top],
+                   train_outcome,
                    method = 'gamSpline',
                    trControl = fitControl,
                    tuneLength = 3)
 
-#predict using lm top layer model
-test_set$pred_elm <- predict(model_elm, test_set[,predictors_top])
-test_set$pred_enn <- predict(model_enn, test_set[,predictors_top])
-test_set$pred_egm <- predict(model_egm, test_set[,predictors_top])
+#nnet as top layer model 
+model_enn <- train(train_predictors[,predictors_top],
+                   train_outcome,
+                   method = 'nnet',
+                   tuneGrid = my_grid,
+                   trControl=fitControl,
+                   linout = TRUE,
+                   maxit = 1000)
 
-test_set <- test_set %>% 
+#predict using lm top layer model
+test_predictors$pred_elm <- predict(model_elm, test_predictors[,predictors_top])
+test_predictors$pred_egm <- predict(model_egm, test_predictors[,predictors_top])
+test_predictors$pred_enn <- predict(model_enn, test_predictors[,predictors_top])
+
+test_predictors <- test_predictors %>% 
   mutate(
-    pred_avg = (OOF_pred_rf + OOF_pred_lm + OOF_pred_nn + OOF_pred_gm)/4
+    pred_avg = (OOF_pred_rf + OOF_pred_lm + OOF_pred_nn + OOF_pred_gm + OOF_pred_ls)/5
   )
 
 # RMSE on test data ----------------------------------------------------------
 
 rmse <- function(x){
-  sqrt(mean((test_set$percent_non_decent - test_set[,x])^2))
+  sqrt(mean((test_outcome - test_predictors[,x])^2))
 }
 
-preds <- test_set |> select(starts_with("pred")) |> names()
+preds <- test_predictors |> select(starts_with("pred")) |> names()
 
 rmse_vec <- rep(NA, length(preds))
 names(rmse_vec) <- preds
@@ -221,44 +257,67 @@ for(i in seq_along(preds)){
 }
 
 rmse_vec
-plot(rmse_vec, type = "o")
+plot(rmse_vec)
 min(rmse_vec)
+
 
 # best predictor is ensemble model with gm as stacked layer
 # but to avoid overfitting, going to use lm as stacked layer
 
 # Predicting outcome for the whole dataset using best model ---------------------------
 
-full$OOF_pred_rf <- predict(model_rf, full[predictors])
-full$OOF_pred_lm <- predict(model_lm, full[predictors])
-full$OOF_pred_nn <- predict(model_nn, full[predictors])
-full$OOF_pred_gm <- predict(model_gm, full[predictors])
-full$pred_elm <- predict(model_elm, full[,predictors_top])
-full$pred_egm <- predict(model_egm, full[,predictors_top])
+full <- as.data.frame(full)
+full_predict <- predict(x_trans, full)
+
+full_predict$OOF_pred_rf <- predict(model_rf, full_predict[,predictors])
+full_predict$OOF_pred_lm <- predict(model_lm, full_predict[,predictors])
+full_predict$OOF_pred_ls <- predict(model_ls, full_predict[,predictors])
+full_predict$OOF_pred_nn <- predict(model_nn, full_predict[,predictors])
+full_predict$OOF_pred_gm <- predict(model_gm, full_predict[,predictors])
+full_predict$pred_elm <- predict(model_elm, full_predict[,predictors_top])
 
 # distribution of predictions and real values ---------------------------------
 
-full %>% 
+full_predict %>% 
+  ggplot() +
+  geom_density(aes(x = OOF_pred_gm), fill = "lightgrey", alpha = 0.5) +
+  geom_density(aes(x = percent_non_decent), fill = "lightblue", alpha = 0.5) +
+  theme_bw()
+
+full_predict %>% 
   ggplot() +
   geom_density(aes(x = pred_elm), fill = "lightgrey", alpha = 0.5) +
   geom_density(aes(x = percent_non_decent), fill = "lightblue", alpha = 0.5) +
   theme_bw()
 
-# virtually identical
-full %>% 
-  ggplot() +
-  geom_density(aes(x = pred_egm), fill = "pink", alpha = 0.5) +
-  geom_density(aes(x = percent_non_decent), fill = "lightblue", alpha = 0.5) +
-  theme_bw()
-
 # visualising distribution of residuals
-full %>% 
-  mutate(res = percent_non_decent - pred_elm) %>% 
+full_predict %>% 
+  mutate(res = percent_non_decent - OOF_pred_gm) |>  
   ggplot(aes(x = res)) +
-  geom_histogram(aes(y = after_stat(density)),
-                 binwidth = 0.25, colour = "black", fill = "lightgrey") +
+  geom_histogram(aes(y = after_stat(density)), colour = "black", fill = "lightgrey") +
   geom_density() +
   theme_bw()
+
+full_predict %>% 
+  mutate(res = percent_non_decent - pred_elm) |>  
+  ggplot(aes(x = res)) +
+  geom_histogram(aes(y = after_stat(density)), colour = "black", fill = "lightgrey") +
+  geom_density() +
+  theme_bw()
+
+full_predict %>% 
+  mutate(res = percent_non_decent - OOF_pred_gm) |>  
+  filter(res < 4) |> 
+  summarise(
+    sqrt(mean(res^2))
+  )
+
+full_predict %>% 
+  mutate(res = percent_non_decent - pred_elm) |>  
+  filter(res < 4) |> 
+  summarise(
+    sqrt(mean(res^2))
+  )
 
 # saving model ------------------------------------------------------
 
@@ -266,4 +325,5 @@ save(model_lm, file = "lm_for_ensemble.RData")
 save(model_rf, file = "rf_for_ensemble.RData")
 save(model_nn, file = "nn_for_ensemble.RData")
 save(model_gm, file = "gm_for_ensemble.RData")
+save(model_ls, file = "ls_for_ensemble.RData")
 save(model_elm, file = "ensemble_model.RData")

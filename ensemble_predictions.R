@@ -106,6 +106,11 @@ predictors <- c("percent_retired","percent_higher_managerial","percent_semi_rout
 test_mod2 <- lm(percent_non_decent ~ ., data = full[,c(predictors,"percent_non_decent")])
 summary(test_mod2)
 
+par(mfrow=c(2,2))
+plot(test_mod2)
+full[68,]
+full <- full |> filter(local_authority != "Derbyshire Dales")
+
 # split into test train --------------------------------------------------
 
 outcome <- full$percent_non_decent
@@ -257,6 +262,7 @@ for(i in seq_along(preds)){
 }
 
 rmse_vec
+par(mfrow = c(1,1))
 plot(rmse_vec)
 min(rmse_vec)
 
@@ -306,18 +312,8 @@ full_predict %>%
   theme_bw()
 
 full_predict %>% 
-  mutate(res = percent_non_decent - OOF_pred_gm) |>  
-  filter(res < 4) |> 
-  summarise(
-    sqrt(mean(res^2))
-  )
-
-full_predict %>% 
-  mutate(res = percent_non_decent - pred_elm) |>  
-  filter(res < 4) |> 
-  summarise(
-    sqrt(mean(res^2))
-  )
+  mutate(res = percent_non_decent - pred_elm, .before = 3) |> 
+  slice_max(res, n = 10)
 
 # saving model ------------------------------------------------------
 

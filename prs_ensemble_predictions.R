@@ -81,7 +81,7 @@ age_la <- age_lsoa |>
 full <- full |> 
   left_join(age_la, by = c("la_code" = "LAD22CD")) |> 
   mutate(
-    log_pct = log(prs_nd_pct),
+    #log_pct = log(prs_nd_pct),
     percent_beds_below = percent_one_below + percent_two_below,
     percent_fg = percent_f + percent_g,
     percent_fixed_room = percent_no_heating + percent_wood + percent_solid,
@@ -106,10 +106,10 @@ names(full)
 # check of linear fit ---------------------------------------------------
 
 mod_vars <- full |> 
-  select(-la_code, -la_name, -owner_nd_total, -prs_nd_total, -sr_nd_total, -rented_nd_total, -rented_nd_pct, -owner_nd_pct, -sr_nd_pct, -prs_nd_pct) |> 
+  select(-la_code, -la_name, -owner_nd_total, -prs_nd_total, -sr_nd_total, -rented_nd_total, -rented_nd_pct, -owner_nd_pct, -sr_nd_pct) |> 
   names()
 
-test_mod <- lm(log_pct ~ ., data = full[,mod_vars])
+test_mod <- lm(prs_nd_pct ~ ., data = full[,mod_vars])
 
 summary(test_mod)
 
@@ -123,7 +123,7 @@ predictors <- c("percent_retired","percent_higher_managerial","percent_semi_rout
                 "percent_long_unemployed",
                 "percent_owned","percent_prs","percent_electric",
                 "percent_detached","percent_semi_detached", "percent_terraced",
-                "percent_flats_purpose","percent_converted",
+                "percent_flats_purpose","percent_converted", "percent_asia",
                 "percent_pre_1919","percent_1919_1944", "percent_beds_below",
                 "percent_fg","percent_fixed_room",
                 "E12000002","E12000003","E12000004","E12000005","E12000006",
@@ -135,7 +135,7 @@ summary(test_mod2)
 
 # split into test train --------------------------------------------------
 
-outcome <- full$log_pct
+outcome <- full$prs_nd_pct
 full_predictors <- full[,predictors]
 set.seed(123)
 in_train <- createDataPartition(outcome, p = 0.8, list = F)
@@ -287,9 +287,10 @@ rmse_vec
 plot(rmse_vec)
 min(rmse_vec)
 
-# best predictor is ensemble model with lm as stacked layer
+# best predictor is ensemble model with GAM as stacked layer
+# using LM as stacked layer to prevent overfitting
 
-#Predictors for top layer models 
+#Predictors for top layer models without GAM
 predictors_top2 <- c('OOF_pred_rf', 'OOF_pred_lm', 'OOF_pred_ls', 'OOF_pred_nn') 
 #lm as top layer model 
 model_elm2 <- train(train_predictors[,predictors_top2],
@@ -317,16 +318,24 @@ full_predict$pred_elm <- predict(model_elm, full_predict[,predictors_top])
 full_predict %>% 
   ggplot() +
   geom_density(aes(x = pred_elm), fill = "lightgrey", alpha = 0.5) +
-  geom_density(aes(x = log_pct), fill = "lightblue", alpha = 0.5) +
+  geom_density(aes(x = prs_nd_pct), fill = "lightblue", alpha = 0.5) +
   theme_bw()
 
 # visualising distribution of residuals
 full_predict %>% 
-  mutate(res = log_pct - pred_elm) %>% 
+  mutate(res = prs_nd_pct - pred_elm) |>  
   ggplot(aes(x = res)) +
   geom_histogram(aes(y = after_stat(density)), colour = "black", fill = "lightgrey") +
   geom_density() +
   theme_bw()
+
+full_predict |> 
+  mutate(res = prs_nd_pct - pred_elm, .before = 3) |> 
+  slice_max(res, n = 10)
+
+full_predict |> 
+  mutate(res = prs_nd_pct - pred_elm, .before = 3) |> 
+  slice_min(res, n = 10)
 
 # saving model ------------------------------------------------------
 

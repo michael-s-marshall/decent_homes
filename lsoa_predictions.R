@@ -179,10 +179,14 @@ full_las %>%
   geom_point(alpha = 0.5) +
   geom_smooth(method = "lm") +
   theme_minimal() +
-  labs(x = "Non-decent Predictions", y = "ONS % Non-decent")
+  labs(x = "Non-decent Predictions", y = "MHCLG % Non-decent")
 
 cor.test(full_las$non_decent_preds, full_las$percent_non_decent)
 (summary(lm(percent_non_decent ~ non_decent_preds, data = full_las)))
+
+par(mfrow=c(2,2))
+(plot(lm(percent_non_decent ~ non_decent_preds, data = full_las)))
+par(mfrow=c(1,1))
 
 la_map_sf <- lsoas %>% 
   left_join(en_df, by = c("LSOA21CD" = "mnemonic")) %>% 

@@ -192,6 +192,10 @@ full_las %>%
 cor.test(full_las$non_decent_preds, full_las$prs_nd_pct)
 (summary(lm(prs_nd_pct ~ non_decent_preds, data = full_las)))
 
+par(mfrow=c(2,2))
+(plot(lm(prs_nd_pct ~ non_decent_preds, data = full_las)))
+par(mfrow=c(1,1))
+
 la_map_sf <- lsoas %>% 
   left_join(en_df, by = c("LSOA21CD" = "mnemonic")) %>% 
   left_join(full_las, by = c("LAD23CD","LAD23NM"),

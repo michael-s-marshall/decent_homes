@@ -187,7 +187,7 @@ model_ls <- train(train_predictors,
                   tuneGrid = lasso_grid,
                   trControl=fitControl)
 
-model_ls
+model_ls 
 
 #Training the gam model
 set.seed(123)
@@ -231,10 +231,14 @@ test_predictors$OOF_pred_ls <- predict(model_ls, test_predictors)
 test_predictors$OOF_pred_nn <- predict(model_nn, test_predictors)
 test_predictors$OOF_pred_gm <- predict(model_gm, test_predictors)
 
+# no point including lasso as it's equivalent to lm
+plot(test_predictors$pred_lm, test_predictors$pred_ls)
+mean(test_predictors$pred_lm == test_predictors$pred_ls)
+
 # ensemble model -----------------------------------------------------------
 
 #Predictors for top layer models 
-predictors_top <- c('OOF_pred_rf', 'OOF_pred_lm', 'OOF_pred_ls', 'OOF_pred_nn', 'OOF_pred_gm') 
+predictors_top <- c('OOF_pred_rf', 'OOF_pred_lm', 'OOF_pred_nn', 'OOF_pred_gm') 
 
 #lm as top layer model 
 model_elm <- train(train_predictors[,predictors_top],
@@ -291,7 +295,7 @@ min(rmse_vec)
 # using LM as stacked layer to prevent overfitting
 
 #Predictors for top layer models without GAM
-predictors_top2 <- c('OOF_pred_rf', 'OOF_pred_lm', 'OOF_pred_ls', 'OOF_pred_nn') 
+predictors_top2 <- c('OOF_pred_rf', 'OOF_pred_lm', 'OOF_pred_nn') 
 #lm as top layer model 
 model_elm2 <- train(train_predictors[,predictors_top2],
                    train_outcome,
@@ -308,7 +312,6 @@ full_predict <- predict(x_trans, full)
 
 full_predict$OOF_pred_rf <- predict(model_rf, full_predict[,predictors])
 full_predict$OOF_pred_lm <- predict(model_lm, full_predict[,predictors])
-full_predict$OOF_pred_ls <- predict(model_ls, full_predict[,predictors])
 full_predict$OOF_pred_nn <- predict(model_nn, full_predict[,predictors])
 full_predict$OOF_pred_gm <- predict(model_gm, full_predict[,predictors])
 full_predict$pred_elm <- predict(model_elm, full_predict[,predictors_top])
@@ -342,6 +345,5 @@ full_predict |>
 save(model_lm, file = "lm_for_prs.RData")
 save(model_rf, file = "rf_for_prs.RData")
 save(model_nn, file = "nn_for_prs.RData")
-save(model_ls, file = "ls_for_prs.RData")
 save(model_gm, file = "gm_for_prs.RData")
 save(model_elm, file = "ensemble_model_prs.RData")
